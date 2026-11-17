@@ -1,0 +1,17 @@
+import {chromium} from 'playwright';
+const browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1000,height:1100},deviceScaleFactor:2});
+await page.goto('http://127.0.0.1:18244');
+await page.fill('input[name=email]','operator@operator.local');await page.fill('input[name=password]','Trace2026!');await page.click('button[type=submit]');await page.waitForSelector('.sidebar');
+const tok=await page.evaluate(()=>sessionStorage.getItem('token'));
+const name='ui-pill-'+Date.now();
+const sensors=[1,2].map(i=>({sensor_id:i,zone:'北',device_type:'pump'}));
+const readings=[1,2].map(i=>({sensor_id:i,value:10,recorded_at:'t'}));
+const ds=await page.evaluate(async ({tok,name,sensors,readings})=>{const r=await fetch('/api/datasets',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},body:JSON.stringify({name,description:'pill',sensors,readings})});return r.json();},{tok,name,sensors,readings});
+await page.evaluate(async ({tok,id})=>{await fetch('/api/plans',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},body:JSON.stringify({name:'ui-pill-plan-'+Date.now(),dataset_id:id,steps:[{op:'scan',source:'readings'},{op:'filter',field:'sensor_id',compare:'eq',value:1}],note:''})});},{tok,id:ds.id});
+await page.reload();await page.waitForSelector('.sidebar');
+await page.locator(`[data-renumber="${ds.id}"]`).click();
+await page.fill('#renumber-form textarea[name=mapping]','{"1": 2, "2": 1}');
+await page.click('#renumber-form button[type=submit]');
+await page.waitForSelector('.renumber-preview');
+await page.locator('.renumber-preview').screenshot({path:'/tmp/uitest/pill2.png'});
+await browser.close();

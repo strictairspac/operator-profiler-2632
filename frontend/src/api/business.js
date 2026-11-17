@@ -2,3 +2,4 @@ import {api,post} from './client.js';
 export const datasets={list:()=>api('/datasets'),save:(d,id)=>post('/datasets'+(id?'/'+id:''),d,id?'PUT':'POST')};
 export const plans={list:()=>api('/plans'),save:(d,id)=>post('/plans'+(id?'/'+id:''),d,id?'PUT':'POST')};
 export const traces={list:()=>api('/traces'),run:d=>post('/traces',d),detail:id=>api('/traces/'+id)};
+export const renumbers={list:()=>api('/renumbers'),preview:(datasetId,mapping)=>post(`/datasets/${datasetId}/renumber/preview`,{mapping}),confirm:id=>post(`/renumbers/${id}/confirm`,{})};

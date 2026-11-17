@@ -28,3 +28,5 @@ class PlanInput(BaseModel):
 class TraceInput(BaseModel):
  name:str=Field(min_length=2,max_length=120)
  plan_id:int
+class RenumberInput(BaseModel):
+ mapping:dict[str,int]

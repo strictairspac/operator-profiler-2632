@@ -1,0 +1,43 @@
+import {chromium} from 'playwright';
+const base='http://127.0.0.1:18244';
+const browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1440,height:1100}});
+const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+async function login(role){await page.goto(base);await page.fill('input[name=email]',role+'@operator.local');await page.fill('input[name=password]','Trace2026!');await page.click('button[type=submit]');await page.waitForSelector('.sidebar');}
+await login('operator');
+const tok=await page.evaluate(()=>sessionStorage.getItem('token'));
+const name='ui-cycle-'+Date.now();
+const sensors=[1,2,3].map(i=>({sensor_id:i,zone:['北','南','东'][i-1],device_type:'pump'}));
+const readings=[1,2,3].map(i=>({sensor_id:i,value:i*10,recorded_at:'t'+i}));
+const ds=await page.evaluate(async ({tok,name,sensors,readings})=>{const r=await fetch('/api/datasets',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},body:JSON.stringify({name,description:'cycle',sensors,readings})});return r.json();},{tok,name,sensors,readings});
+const pl=await page.evaluate(async ({tok,id})=>{const r=await fetch('/api/plans',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},body:JSON.stringify({name:'ui-cycle-plan-'+Date.now(),dataset_id:id,steps:[{op:'scan',source:'readings'},{op:'filter',field:'sensor_id',compare:'eq',value:2},{op:'group',keys:['sensor_id'],measure:'value',aggregate:'sum'}],note:''})});return r.json();},{tok,id:ds.id});
+await page.reload();await page.waitForSelector('.sidebar');
+await page.locator(`[data-renumber="${ds.id}"]`).click();
+await page.fill('#renumber-form textarea[name=mapping]','{"1": 2, "2": 3, "3": 1}');
+await page.click('#renumber-form button[type=submit]');await page.waitForSelector('[data-confirm-renumber]');
+console.log('CYCLE PREVIEW OK');
+await page.click('[data-confirm-renumber]');await page.waitForTimeout(800);
+const afterDs=await page.evaluate(async ({tok,id})=>{const l=await (await fetch('/api/datasets',{headers:{Authorization:'Bearer '+tok}})).json();return l.find(d=>d.id===id);},{tok,id:ds.id});
+const afterPl=await page.evaluate(async ({tok,id})=>{const l=await (await fetch('/api/plans',{headers:{Authorization:'Bearer '+tok}})).json();return l.find(p=>p.id===id);},{tok,id:pl.id});
+console.log('CYCLE ZONES:',JSON.stringify(afterDs.sensors.map(s=>[s.zone,s.sensor_id])));
+console.log('CYCLE PLAN EQ:',afterPl.steps[1].value);
+// conflict acceptance path via UI: preview, then edit dataset via API, wait for poll, inspect banner/button
+await page.click('[data-discard-renumber]');
+await page.fill('#renumber-form textarea[name=mapping]','{"1": 5}');
+await page.click('#renumber-form button[type=submit]');await page.waitForSelector('[data-confirm-renumber]');
+await page.evaluate(async ({tok,id,sensors,readings,name})=>{await fetch('/api/datasets/'+id,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},body:JSON.stringify({name:name+'-edited',description:'edit during preview',sensors,readings})});},{tok,id:ds.id,sensors:afterDs.sensors,readings:readings,name});
+await page.waitForTimeout(3200);
+const banner=await page.locator('.renumber-preview .feedback.error').first().textContent().catch(()=>null);
+const confirmCount=await page.locator('[data-confirm-renumber]').count();
+console.log('STALE BANNER:',!!banner,'CONFIRM BTN:',confirmCount);
+const histStatus=await page.locator('.renumber-block table tbody tr').first().textContent();
+console.log('HISTORY ROW:',histStatus.replace(/\s+/g,' ').slice(0,80));
+await page.screenshot({path:'/tmp/uitest/stale.png',fullPage:true});
+// viewer read-only check
+await page.evaluate(()=>sessionStorage.clear());
+await login('viewer');
+await page.locator('[data-renumber]').first().click();
+const viewerMappings=await page.locator('#renumber-form button[type=submit]').isDisabled();
+const viewerEdit=await page.locator('[data-edit-dataset]').first().isDisabled();
+console.log('VIEWER submit disabled:',viewerMappings,'edit disabled:',viewerEdit);
+console.log('ERRORS:',errors);
+await browser.close();
